@@ -93,13 +93,22 @@ class HoymilesEntity(Entity):
     @property
     def device_info(self) -> DeviceInfo:
         """Link connected devices to the DTU owned by this config entry."""
-        device_info = self._attr_device_info.copy()
+        # Since Home Assistant 2026.11 DeviceInfo is a dataclass without .copy();
+        # unpacking works with both the new dataclass and the old TypedDict.
+        device_info = DeviceInfo(**self._attr_device_info)
         if not self.entity_description.is_dtu_sensor:
             identifier = (DOMAIN, str(self._config_entry.data[CONF_DTU_SERIAL_NUMBER]))
             if hasattr(dr, "async_get_device_id_by_identifier"):
-                device_info["via_device_id"] = dr.async_get_device_id_by_identifier(
-                    self.hass, identifier, config_entry_id=self._config_entry.entry_id
-                )
+                try:
+                    device_info["via_device_id"] = dr.async_get_device_id_by_identifier(
+                        self.hass,
+                        identifier,
+                        config_entry_id=self._config_entry.entry_id,
+                    )
+                except ValueError:
+                    # The DTU device is not registered yet (first setup):
+                    # add the entity without the parent link instead of failing.
+                    _LOGGER.debug("DTU device %s not registered yet", identifier)
             else:
                 # Compatibility with Home Assistant before the 2026.8 registry API.
                 device_info["via_device"] = identifier
